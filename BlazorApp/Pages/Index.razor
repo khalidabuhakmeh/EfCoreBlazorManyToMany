@@ -1,0 +1,97 @@
+@page "/"
+@using BlazorApp.Models
+@using Microsoft.EntityFrameworkCore
+@implements IDisposable
+@inject IDbContextFactory<Database> DbFactory
+
+<table class="table table-bordered">
+    <thead>
+    <tr>
+        <th>Name</th>
+        <th>Categories</th>
+    </tr>
+    </thead>
+    <tbody>
+    @foreach (var food in _foods)
+    {
+        <tr>
+            <td>@food.Name</td>
+            <td>
+                <ol>
+                    @foreach (var category in _categories)
+                    {
+                        var id = $"category-{food.Id}-{category.Id}";
+                        <li style="display: inline; margin: 3px;">
+                            <input id="@id" type="checkbox"
+                                   @onchange="async args => { await UpdateFoodCategory(args, food.Id, category.Id); }"
+                                   checked="@IsInCategory(food, category.Id)">
+                            <label for="@id">@category.Name</label>
+                        </li>
+                    }
+                </ol>
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>
+
+
+@code {
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshFoodAsync();
+    }
+
+    private List<Food> _foods;
+    private List<Category> _categories;
+
+    private async Task UpdateFoodCategory(ChangeEventArgs args, int foodId, int categoryId)
+    {
+        await using var db = DbFactory.CreateDbContext();
+        var food = await db.Foods
+            .Include(f => f.Categories)
+            .FirstOrDefaultAsync(f => f.Id == foodId);
+
+        if (args.Value is true)
+        {
+            if (food.Categories.All(c => c.Id != categoryId))
+            {
+                var category = await db.Categories.FirstAsync(c => c.Id == categoryId);
+                food.Categories.Add(category);
+            }
+        }
+        else
+        {
+            var category = food.Categories.FirstOrDefault(c => c.Id == categoryId);
+            if (category is { })
+            {
+                food.Categories.Remove(category);
+            }
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    private static string IsInCategory(Food food, int categoryId)
+        => food.Categories.Any(x => x.Id == categoryId) ? "checked" : null;
+
+    private async Task RefreshFoodAsync()
+    {
+        await using var db = DbFactory.CreateDbContext();
+        _foods = await db.Foods
+            .AsNoTrackingWithIdentityResolution()
+            .Include(f => f.Categories)
+            .ToListAsync();
+
+        _categories = await db
+            .Categories
+            .AsNoTrackingWithIdentityResolution()
+            .ToListAsync();
+    }
+
+    public void Dispose()
+    {
+    }
+
+}
